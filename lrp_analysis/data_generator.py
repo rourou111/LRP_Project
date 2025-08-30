@@ -115,6 +115,7 @@ def perturb_model_weights(model, layer_name='layer4.1.conv2', std_dev=1e-2):
 def generate_drift_samples(original_model, data_loader, device, classes):
     print("--- Step 4: Generating parameter drift samples (Category 3) ---")
     drift_samples = []
+    count = 0  # <-- 补充这一行，用于计数
 
     # 1. 只在开头创建一次漂移模型
     drifted_model = perturb_model_weights(original_model) 
@@ -123,28 +124,30 @@ def generate_drift_samples(original_model, data_loader, device, classes):
     # 遍历数据加载器中的所有批次
     for batch_idx, (images, labels) in enumerate(data_loader):
         print(f"\r  正在处理漂移样本，批次: {batch_idx+1}/{len(data_loader)}", end="")
-        images, labels = images.numpy(), labels.numpy()
+        images, labels = images.to(device), labels.to(device)
 
-        # 生成漂移模型
-        drifted_model = perturb_model_weights(original_model)
+        # 使用正确的模型获取预测结果
+        with torch.no_grad():
+            original_outputs = original_model(images)
+            original_preds = torch.argmax(original_outputs, dim=1)
 
-        # 验证攻击效果
-        original_preds = np.argmax(classifier.predict(images), axis=1)
-        drifted_preds = np.argmax(drifted_model.predict(images), axis=1)
+            drifted_outputs = drifted_model(images)
+            drifted_preds = torch.argmax(drifted_outputs, dim=1)
 
         for i in range(len(images)):
             if original_preds[i] == labels[i] and drifted_preds[i] != labels[i]:
                 # 筛选出“原始预测正确”且“漂移后预测错误”的样本
                 drift_samples.append({
-                    "original_image": torch.tensor(images[i]),
-                    "drifted_image": torch.tensor(images[i]),
-                    "label": labels[i],
-                    "original_pred": original_preds[i],
-                    "drifted_pred": drifted_preds[i],
-                    "vulnerability_type": "parameter_drift"
+                    "original_image": images[i],
+                    "drifted_image": images[i],  # 对于漂移，图像本身不变
+                    "label": labels[i].item(),
+                    "original_pred": original_preds[i].item(),
+                    "drifted_pred": drifted_preds[i].item(),
+                    "vulnerability_type": "parameter_drift" # 修正漏洞类型名称
                 })
                 count += 1
-                print(f"  Found a drift sample: Original={classes[labels[i]]}, Drifted pred={classes[drifted_preds[i]]}")
+    # 这个打印语句应该在内层循环之外
+    print(f"\n  找到了 {count} 个漂移样本。")
 
     print(f"Generated {len(drift_samples)} parameter drift samples.\n")
     # 2. 返回两个值

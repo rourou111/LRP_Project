@@ -35,7 +35,7 @@ def main():
     # --- 1. 准备工作：加载数据和预训练模型 --- 
     # (这部分逻辑直接从原脚本复制过来，几乎不需要改动)
     transform = transforms.Compose([transforms.ToTensor()])
-    testset = torchvision.datasets.SVHN(root='./data', split='test', download=True, transform=transform)
+    testset = torchvision.datasets.SVHN(root='./data', split='test', download=False, transform=transform)
     testloader = torch.utils.data.DataLoader(testset, batch_size=100, shuffle=False, num_workers=2)
     classes = ('0', '1', '2', '3', '4', '5', '6', '7', '8', '9')
 

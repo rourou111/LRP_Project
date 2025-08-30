@@ -66,17 +66,46 @@ def main():
     print(f"开始为 {len(all_vulnerabilities)} 个漏洞样本生成成对的热力图...")
 
     for i, sample in enumerate(all_vulnerabilities):
-        # ... (原脚本中遍历每个样本、准备数据、计算LRP属性的完整for循环逻辑) ...
-        # 注意：原脚本中根据漏洞类型获取 original_image 的逻辑需要保留
-        # 注意：原脚本中将结果存入 paired_data 字典的逻辑需要保留
+        print(f"\r  正在处理样本 {i+1}/{len(all_vulnerabilities)}", end="")
+
+        # 确定原始图像和漏洞图像
+        original_image = sample['original_image'].to(device)
+        vuln_type = sample['vulnerability_type']
+
+        if vuln_type == 'adversarial_pgd':
+            vuln_image = sample['adversarial_image'].to(device)
+        elif vuln_type == 'noise_gaussian':
+            vuln_image = sample['noisy_image'].to(device)
+        elif vuln_type == 'parameter_drift': # 根据您的其他脚本修正类型名称
+            vuln_image = original_image # 对于漂移，图像不变
+        else:
+            continue
+
+        # 确保图像有批次维度 (batch dimension)
+        if original_image.dim() == 3:
+            original_image = original_image.unsqueeze(0)
+        if vuln_image.dim() == 3:
+            vuln_image = vuln_image.unsqueeze(0)
+
+        # 获取模型预测结果
+        with torch.no_grad():
+            original_pred = torch.argmax(model(original_image)).item()
+            vuln_pred = torch.argmax(model(vuln_image)).item()
+
+        # 计算LRP热力图
+        h_clean = lrp.attribute(original_image, target=original_pred)
+        h_vuln = lrp.attribute(vuln_image, target=vuln_pred)
+
+        # 【关键部分】定义 paired_data 字典
+        paired_data = {
+            'h_clean': h_clean.cpu(),
+            'h_vuln': h_vuln.cpu(),
+            'vulnerability_type': vuln_type
+        }
+
         paired_heatmaps_data.append(paired_data)
-    # --- 保存结果 ---
-    output_filename = os.path.join(run_output_dir, 'paired_heatmaps.pkl')
-    if os.path.exists(output_filename):
-        os.remove(output_filename)
-    with open(output_filename, 'wb') as f:
-        pickle.dump(paired_heatmaps_data, f)
-    print(f"包含成对热力图的最终结果已成功保存到: {output_filename}")
+
+    print("\n--- 所有热力图已成功生成 ---")
 
 if __name__ == '__main__':
     main()
