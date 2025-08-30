@@ -16,6 +16,7 @@ import torch.nn as nn
 import torch.optim as optim
 import pickle
 import yaml
+from art.estimators.classification import PyTorchClassifier
 
 # 从我们新创建的模块中导入核心函数
 from lrp_analysis.data_generator import (
@@ -40,6 +41,7 @@ def main():
     transform = transforms.Compose([transforms.ToTensor()])
     testset = torchvision.datasets.SVHN(root='./data', split='test', download=True, transform=transform)
     testloader = torch.utils.data.DataLoader(testset, batch_size=100, shuffle=False, num_workers=2)
+    classes = ('0', '1', '2', '3', '4', '5', '6', '7', '8', '9')
 
     model = torchvision.models.resnet18(pretrained=False)
     model_path = os.path.expanduser("~/.cache/torch/hub/checkpoints/resnet18-f37072fd.pth")
@@ -58,9 +60,9 @@ def main():
     # --- 2. 执行并收集所有漏洞样本 ---
     # (直接调用我们从模块里导入的函数，代码变得非常简洁)
     print("--- 开始生成所有类型的漏洞样本 ---")
-    adversarial_vulnerabilities = generate_adversarial_samples(classifier, testloader)
-    noisy_vulnerabilities = generate_noisy_samples(model, testloader)
-    drift_vulnerabilities, drifted_model = generate_drift_samples(model, testloader)
+    adversarial_vulnerabilities = generate_adversarial_samples(classifier, testloader, classes)
+    noisy_vulnerabilities = generate_noisy_samples(model, testloader, device, classes)
+    drift_vulnerabilities, drifted_model = generate_drift_samples(model, testloader, device, classes)
 
     all_vulnerabilities = adversarial_vulnerabilities + noisy_vulnerabilities + drift_vulnerabilities
     print(f"\n总共收集到 {len(all_vulnerabilities)} 个漏洞样本。")

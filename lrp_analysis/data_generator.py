@@ -6,7 +6,7 @@ from art.estimators.classification import PyTorchClassifier
 from art.attacks.evasion import ProjectedGradientDescent
 import copy
 
-def generate_adversarial_samples(classifier, data_loader):
+def generate_adversarial_samples(classifier, data_loader, classes):
     """
     使用PGD攻击生成对抗样本
     """
@@ -54,11 +54,11 @@ def add_gaussian_noise(image, std_dev=0.15):
     noisy_image = image + noise
     return torch.clamp(noisy_image, 0, 1) # 将像素值裁剪回[0, 1]范围
 
-def generate_noisy_samples(model, data_loader):
+def generate_noisy_samples(model, data_loader, device, classes):
     """
     通过添加高斯噪声生成失效样本
     """
-    print("--- Step 3: Generating noisy samples (Category 2) ---")
+    print(f"  Found a noisy sample: Original={classes[labels[i]]}, ...")
     noisy_samples = []
     count = 0
     
@@ -112,13 +112,13 @@ def perturb_model_weights(model, layer_name='layer4.1.conv2', std_dev=1e-2):
     drifted_model.eval()
     return drifted_model
 
-def generate_drift_samples(original_model, data_loader):
-    """
-    通过对模型权重添加微小扰动生成失效样本
-    """
-    print("--- Step 4: Generating drift samples (Category 3) ---")
+def generate_drift_samples(original_model, data_loader, device, classes):
+    print("--- Step 4: Generating parameter drift samples (Category 3) ---")
     drift_samples = []
-    count = 0
+
+    # 1. 只在开头创建一次漂移模型
+    drifted_model = perturb_model_weights(original_model) 
+    drifted_model.to(device)
 
     # 遍历数据加载器中的所有批次
     for batch_idx, (images, labels) in enumerate(data_loader):
@@ -146,5 +146,6 @@ def generate_drift_samples(original_model, data_loader):
                 count += 1
                 print(f"  Found a drift sample: Original={classes[labels[i]]}, Drifted pred={classes[drifted_preds[i]]}")
 
-    print(f"Generated {len(drift_samples)} drift samples.\n")
-    return drift_samples
+    print(f"Generated {len(drift_samples)} parameter drift samples.\n")
+    # 2. 返回两个值
+    return drift_samples, drifted_model

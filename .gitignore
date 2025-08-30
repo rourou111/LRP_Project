@@ -16,3 +16,9 @@ pytorch_311/
 runs/
 # 忽略生成的漏洞数据文件
 all_vulnerabilities.pkl
+
+# 忽略中间产物文件夹
+/artifacts/
+
+# 忽略所有运行结果
+/runs/
