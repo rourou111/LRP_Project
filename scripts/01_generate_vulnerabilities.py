@@ -4,11 +4,7 @@
 脚本 01: 生成三种类型的漏洞样本。
 执行方式: 在项目根目录下运行 `python scripts/01_generate_vulnerabilities.py`
 """
-import os
-import sys
-# 将项目根目录添加到Python路径，这样才能找到 lrp_analysis 包
-sys.path.insert(0, os.path.abspath('.')) 
-
+import os 
 import torch
 import torchvision
 import torchvision.transforms as transforms

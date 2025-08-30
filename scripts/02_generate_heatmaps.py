@@ -5,9 +5,6 @@
 执行方式: 在项目根目录下运行 `python scripts/02_generate_heatmaps.py`
 """
 import os
-import sys
-sys.path.insert(0, os.path.abspath('.'))
-
 import torch
 import torch.nn as nn
 import torchvision.models as models

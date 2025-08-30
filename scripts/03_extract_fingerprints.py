@@ -5,9 +5,6 @@
 执行方式: 在项目根目录下运行 `python scripts/03_extract_fingerprints.py`
 """
 import os
-import sys
-sys.path.insert(0, os.path.abspath('.')) # 添加根目录到路径
-
 import pickle
 import pandas as pd
 import numpy as np

@@ -5,9 +5,6 @@
 执行方式: 在项目根目录下运行 `python scripts/04_train_classifier.py`
 """
 import os
-import sys
-sys.path.insert(0, os.path.abspath('.'))
-
 import pandas as pd
 import matplotlib.pyplot as plt
 import seaborn as sns
