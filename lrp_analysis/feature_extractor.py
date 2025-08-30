@@ -116,6 +116,8 @@ def calculate_kurtosis_diff(h_clean_tensor, h_vuln_tensor):
     # 返回差值
     return kurt_vuln - kurt_clean
 def calculate_high_freq_energy_ratio(h_vuln_tensor, high_freq_band=0.25):
+    if h_vuln_tensor.dim() == 4:
+        h_vuln_tensor = h_vuln_tensor.squeeze(0)
     """
     计算单张热力图的高频能量占比。
     (修正版：增加了对三通道热力图的处理)
@@ -166,6 +168,8 @@ def calculate_high_freq_energy_ratio(h_vuln_tensor, high_freq_band=0.25):
     return ratio
 
 def calculate_texture_features(h_vuln_tensor):
+    if h_vuln_tensor.dim() == 4:
+        h_vuln_tensor = h_vuln_tensor.squeeze(0)
     """
     计算单张热力图的多种纹理特征。
 
@@ -246,6 +250,10 @@ def calculate_dynamic_wavelet_ratio(h_clean_tensor, h_vuln_tensor):
     return change_ratio
 
 def calculate_ll_distortion(h_clean_tensor, h_vuln_tensor):
+    if h_clean_tensor.dim() == 4:
+        h_clean_tensor = h_clean_tensor.squeeze(0)
+    if h_vuln_tensor.dim() == 4:
+        h_vuln_tensor = h_vuln_tensor.squeeze(0)
     """特征二：计算低频子带结构失真度"""
     
     def get_ll_texture_vec(h_tensor):
