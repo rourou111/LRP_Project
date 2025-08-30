@@ -76,7 +76,7 @@ def main():
             vuln_image = sample['adversarial_image'].to(device)
         elif vuln_type == 'noise_gaussian':
             vuln_image = sample['noisy_image'].to(device)
-        elif vuln_type == 'parameter_drift': # 根据您的其他脚本修正类型名称
+        elif vuln_type == 'drift_parameter':
             vuln_image = original_image # 对于漂移，图像不变
         else:
             continue
