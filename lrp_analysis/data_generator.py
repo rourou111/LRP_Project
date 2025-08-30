@@ -117,12 +117,10 @@ def generate_drift_samples(original_model, data_loader, device, classes):
             if original_preds[i] == labels[i] and drifted_preds[i] != labels[i]:
                 drift_samples.append({
                     "original_image": images[i].cpu(),
-                    # 对于漂移漏洞，受攻击的图像就是原图
-                    "drifted_image": images[i].cpu(), 
+                    # "drifted_image": images[i].cpu(), # <-- 直接删除这一行
                     "label": labels[i].item(),
                     "original_pred": original_preds[i].item(),
                     "drifted_pred": drifted_preds[i].item(),
-                    # 【关键修正】统一命名为 'drift_parameter'
                     "vulnerability_type": "drift_parameter"
                 })
 
