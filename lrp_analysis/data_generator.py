@@ -58,7 +58,6 @@ def generate_noisy_samples(model, data_loader, device, classes):
     """
     通过添加高斯噪声生成失效样本
     """
-    print(f"  Found a noisy sample: Original={classes[labels[i]]}, ...")
     noisy_samples = []
     count = 0
     
