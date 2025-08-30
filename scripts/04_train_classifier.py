@@ -108,10 +108,41 @@ def main():
     label_encoder2 = LabelEncoder()
     y_train_experts = label_encoder2.fit_transform(y_train_experts_raw)
     print(f"已筛选出 {len(X_train_experts)} 个'对抗 vs. 噪声'样本，交由专家组处理。")
-    features_dynamic = [ ... ] # 保持原样
-    features_frequency = [ ... ] # 保持原样
-    features_texture = [ ... ] # 保持原样
-    features_sensitivity = [ ... ] # 保持原样
+    features_dynamic = [
+        'wasserstein_dist',
+        'cosine_similarity',
+        'kl_divergence_pos',
+        'kl_divergence_neg',
+        'std_dev_diff',         # 衡量注意力分散/集中的变化 [cite: 26]
+        'kurtosis_diff',        # 衡量注意力尖锐/平坦的变化 [cite: 27]
+        'dynamic_wavelet_ratio_change', # 您新设计的特征一：动态小波能量比变化率
+        'll_distortion'         # 您新设计的特征二：低频子带结构失真度
+    ]
+
+    # 专家2：“频域分析专家” (Frequency Domain Expert)
+    # 关注的是 H_vuln 在频域上的内在特性
+    features_frequency = [
+        'high_freq_ratio',     # 旨在捕捉高斯噪声的高频散布特性 [cite: 23]
+        'ratio_zscore'         # 您新设计的特征三：能量比的基线分离度 (Z-score)
+    ]
+
+    # 专家3：“纹理学专家” (Texture Expert)
+    # 关注的是 H_vuln 热力图的“质感”
+    features_texture = [
+        'contrast',             # 对比度 [cite: 24]
+        'homogeneity',          # 同质性 [cite: 24]
+        'energy',               # 能量 [cite: 24]
+        'correlation'           # 相关性 [cite: 24]
+    ]
+
+    # 专家4：“敏感性/内在性专家” (Sensitivity/Intrinsic Expert)
+    # (这是一个建议的组合，您可以根据需要调整)
+    # 关注的是 H_vuln 本身的统计特性，作为对其他专家的补充
+    features_sensitivity = [
+        'std_dev_diff',         # 注意：这里可以复用一些特征，让不同专家有交叉视角
+        'kurtosis_diff',
+        'high_freq_ratio'
+    ]  
     X_train_experts_imputed = imputer1.transform(X_train_experts)
     X_train_experts_scaled = scaler1.transform(X_train_experts_imputed)
     X_train_experts_scaled_df = pd.DataFrame(X_train_experts_scaled, columns=X_train_experts.columns, index=X_train_experts.index)
