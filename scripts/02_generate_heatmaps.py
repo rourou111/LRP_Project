@@ -106,6 +106,20 @@ def main():
         paired_heatmaps_data.append(paired_data)
 
     print("\n--- 所有热力图已成功生成 ---")
+    # --- 保存最终结果 ---
+    output_filename = os.path.join(run_output_dir, 'paired_heatmaps.pkl')
+
+    print(f"\n正在将 {len(paired_heatmaps_data)} 组成对的热力图保存到: {output_filename}")
+
+    # 检查旧文件并删除（这是一个好习惯）
+    if os.path.exists(output_filename):
+        os.remove(output_filename)
+
+    # 使用 pickle 将数据写入文件
+    with open(output_filename, 'wb') as f:
+        pickle.dump(paired_heatmaps_data, f)
+
+    print("保存成功！现在可以运行下一步了。")
 
 if __name__ == '__main__':
     main()
