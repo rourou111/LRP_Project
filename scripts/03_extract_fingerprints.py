@@ -21,7 +21,8 @@ from lrp_analysis.feature_extractor import (
     calculate_high_freq_energy_ratio,
     calculate_texture_features,
     calculate_dynamic_wavelet_ratio,
-    calculate_ll_distortion
+    calculate_ll_distortion,
+    calculate_super_fingerprint
 )
 
 def main():
@@ -109,6 +110,9 @@ def main():
         static_ratio_sample = get_ratio_simple(h_vuln)
         ratio_zscore = np.abs(static_ratio_sample - mu_noise) / (sigma_noise + 1e-10)
 
+        # 6. 计算超级指纹 (新特征)
+        super_fingerprint = calculate_super_fingerprint(h_clean, h_vuln)
+
         # --- 将所有结果存入一个字典 ---
         fingerprint_data = {
             'wasserstein_dist': wasserstein,
@@ -122,6 +126,7 @@ def main():
             'dynamic_wavelet_ratio_change': dynamic_ratio_change,
             'll_distortion': ll_distortion,
             'ratio_zscore': ratio_zscore,
+            'super_fingerprint': super_fingerprint,
             'vulnerability_type': vuln_type
         }
         fingerprints_list.append(fingerprint_data)

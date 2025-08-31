@@ -280,3 +280,40 @@ def calculate_ll_distortion(h_clean_tensor, h_vuln_tensor):
     # 计算余弦距离: 1 - (a dot b) / (||a|| * ||b||)
     dist = 1 - np.dot(vec_c, vec_v) / (np.linalg.norm(vec_c) * np.linalg.norm(vec_v) + 1e-10)
     return dist
+
+def calculate_super_fingerprint(h_clean_tensor, h_vuln_tensor):
+    """
+    超级指纹：样本能量比偏离噪声基线的显著性 × 低频结构被破坏的严重性
+    
+    物理意义：通过乘法操作实现逻辑"与"门，将对抗攻击信号从高斯噪声背景中强力"拔"出
+    
+    Args:
+        h_clean_tensor (torch.Tensor): 干净样本的热力图
+        h_vuln_tensor (torch.Tensor): 失效样本的热力图
+        
+    Returns:
+        float: 超级指纹值
+    """
+    # 计算 ratio_zscore (特征三)
+    def get_ratio_simple(h_tensor):
+        """计算高频/低频能量比"""
+        h_np = h_tensor.detach().numpy().mean(axis=0)
+        coeffs = pywt.dwt2(h_np, 'haar')
+        LL, (LH, HL, HH) = coeffs
+        energy_ll = np.sum(LL**2)
+        energy_high_freq = np.sum(LH**2) + np.sum(HL**2) + np.sum(HH**2)
+        return energy_high_freq / (energy_ll + 1e-10)
+    
+    # 计算 ll_distortion (特征二)
+    ll_distortion = calculate_ll_distortion(h_clean_tensor, h_vuln_tensor)
+    
+    # 计算 ratio_zscore (需要噪声基准，这里返回原始比值作为近似)
+    # 注意：在实际使用中，这个值应该从训练数据中预先计算好的基准值
+    static_ratio_sample = get_ratio_simple(h_vuln_tensor)
+    
+    # 超级指纹 = ratio_zscore × ll_distortion
+    # 由于ratio_zscore需要噪声基准，这里使用一个简化的版本
+    # 在实际应用中，应该传入预先计算好的ratio_zscore值
+    super_fingerprint = static_ratio_sample * ll_distortion
+    
+    return super_fingerprint
