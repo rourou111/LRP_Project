@@ -12,6 +12,7 @@ import pandas as pd
 import numpy as np
 import yaml
 import sys
+import glob
 from sklearn.model_selection import train_test_split, cross_val_score
 from sklearn.ensemble import RandomForestClassifier
 from sklearn.metrics import classification_report, confusion_matrix, accuracy_score
@@ -19,6 +20,52 @@ from sklearn.preprocessing import StandardScaler
 import matplotlib.pyplot as plt
 import seaborn as sns
 from datetime import datetime
+
+def clean_data(df):
+    """
+    清理数据中的无穷大值、NaN值和异常值
+    """
+    print("--- 数据清理 ---")
+    
+    # 检查原始数据状态
+    print(f"原始数据形状: {df.shape}")
+    print(f"无穷大值数量: {np.isinf(df.select_dtypes(include=[np.number])).sum().sum()}")
+    print(f"NaN值数量: {df.isnull().sum().sum()}")
+    
+    # 复制数据框
+    df_clean = df.copy()
+    
+    # 处理无穷大值：用该列的最大有限值替换
+    numeric_columns = df_clean.select_dtypes(include=[np.number]).columns
+    for col in numeric_columns:
+        if col == 'vulnerability_type':  # 跳过标签列
+            continue
+            
+        # 获取该列的最大有限值
+        finite_values = df_clean[col][np.isfinite(df_clean[col])]
+        if len(finite_values) > 0:
+            max_finite = finite_values.max()
+            min_finite = finite_values.min()
+            
+            # 替换正无穷大
+            df_clean[col] = df_clean[col].replace([np.inf], max_finite * 1.1)
+            # 替换负无穷大
+            df_clean[col] = df_clean[col].replace([-np.inf], min_finite * 1.1)
+    
+    # 处理NaN值：用该列的中位数替换
+    for col in numeric_columns:
+        if col == 'vulnerability_type':  # 跳过标签列
+            continue
+            
+        median_val = df_clean[col].median()
+        df_clean[col] = df_clean[col].fillna(median_val)
+    
+    # 检查清理后的数据状态
+    print(f"清理后数据形状: {df_clean.shape}")
+    print(f"清理后无穷大值数量: {np.isinf(df_clean.select_dtypes(include=[np.number])).sum().sum()}")
+    print(f"清理后NaN值数量: {df_clean.isnull().sum().sum()}")
+    
+    return df_clean
 
 def main():
     print("=== 脚本 04: 训练优化的两阶段漏洞检测分类器 ===")
@@ -47,6 +94,9 @@ def main():
         print(f"\n错误：在路径 '{fingerprints_file_path}' 中找不到 vulnerability_fingerprints.csv 文件。")
         sys.exit(1)
     
+    # --- 数据清理 ---
+    fingerprints_df = clean_data(fingerprints_df)
+    
     # --- 数据预处理 ---
     print("\n--- 数据预处理 ---")
     
@@ -65,7 +115,7 @@ def main():
     
     # 准备第一阶段数据
     stage1_data = fingerprints_df.copy()
-    stage1_data['is_parameter_drift'] = (stage1_data['vulnerability_type'] == 'parameter_drift').astype(int)
+    stage1_data['is_parameter_drift'] = (stage1_data['vulnerability_type'] == 'drift_parameter').astype(int)
     
     # 第一阶段特征：使用所有特征
     stage1_features = feature_columns
@@ -92,7 +142,7 @@ def main():
     print("目标：精准区分对抗攻击与高斯噪声")
     
     # 准备第二阶段数据：只包含非参数漂移的样本
-    stage2_data = fingerprints_df[fingerprints_df['vulnerability_type'] != 'parameter_drift'].copy()
+    stage2_data = fingerprints_df[fingerprints_df['vulnerability_type'] != 'drift_parameter'].copy()
     stage2_data = stage2_data[stage2_data['vulnerability_type'].isin(['adversarial_pgd', 'noise_gaussian'])]
     
     print(f"第二阶段样本数量: {len(stage2_data)}")
@@ -278,18 +328,16 @@ def main():
     print(f"   - 绝对提升: {accuracy_improvement:.4f}")
     print(f"   - 相对提升: {(accuracy_improvement / cv_scores_original.mean() * 100):.2f}%")
     
-    print(f"\n�� 核心特征:")
+    print(f"\n 核心特征:")
     for i, feature in enumerate(stage2_core_features, 1):
         importance = feature_importance[feature_importance['feature'] == feature]['importance'].iloc[0]
         print(f"   {i}. {feature}: {importance:.4f}")
     
     print(f"\n💾 模型保存位置: {models_output_dir}")
-    print(f"�� 性能报告: {performance_report_path}")
+    print(f" 性能报告: {performance_report_path}")
     
-    print("\n�� 系统已成功从'全科医生'升级为'专科医生'！")
+    print("\n 系统已成功从'全科医生'升级为'专科医生'！")
     print("   现在可以精准区分对抗攻击与高斯噪声了！")
 
 if __name__ == '__main__':
-    # 添加缺失的导入
-    import glob
     main()
