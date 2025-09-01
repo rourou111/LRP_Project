@@ -128,3 +128,4 @@ def generate_drift_samples(original_model, data_loader, device, classes):
 
     print(f"\nGenerated {len(drift_samples)} parameter drift samples.")
     return drift_samples, drifted_model
+    #
