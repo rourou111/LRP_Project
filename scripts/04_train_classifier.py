@@ -97,74 +97,78 @@ def main():
     print(classification_report(y_train1, pred1_train, target_names=['非漂移 (0)', '漂移 (1)']))
 
     # =============================================================================
-    # 阶段二：构建"专家组决策系统" (Specialist System)
+    # 阶段二：构建"一票否决"仲裁专家模型架构
     # =============================================================================
-    # ... (此阶段代码与原脚本完全一致，无需改动) ...
     print("\n" + "="*50)
-    print("阶段二：开始构建'专家组决策系统'")
+    print("阶段二：开始构建'一票否决'仲裁专家模型架构")
     print("="*50)
     non_drift_train_mask = (y_train1 == 0)
     X_train_experts = X_train_full[non_drift_train_mask]
     y_train_experts_raw = y_train_full[non_drift_train_mask]
     label_encoder2 = LabelEncoder()
     y_train_experts = label_encoder2.fit_transform(y_train_experts_raw)
-    print(f"已筛选出 {len(X_train_experts)} 个'对抗 vs. 噪声'样本，交由专家组处理。")
-    features_dynamic = [
-        'wasserstein_dist',
-        'cosine_similarity',
-        'kl_divergence_pos',
-        'kl_divergence_neg',
-        'std_dev_diff',         # 衡量注意力分散/集中的变化 [cite: 26]
-        'kurtosis_diff',        # 衡量注意力尖锐/平坦的变化 [cite: 27]
-        'dynamic_wavelet_ratio_change', # 您新设计的特征一：动态小波能量比变化率
-        'll_distortion'         # 您新设计的特征二：低频子带结构失真度
+    print(f"已筛选出 {len(X_train_experts)} 个'对抗 vs. 噪声'样本，交由仲裁专家处理。")
+    
+    # 阶段 2a：专家模型的专项化与重定义
+    # =============================================================================
+    print("\n--- 阶段 2a：专家模型的专项化与重定义 ---")
+    # 1. 定义"能量派"初筛专家 (energy_screener)
+    # 使命：担任第一道防线，成为一个高灵敏度的"异常信号探测器"
+    # 理论依据：特征重要性分析明确指出，high_freq_ratio, std_dev_diff, ratio_zscore 是最强大的信号探测器
+    features_energy_screener = [
+        'high_freq_ratio',      # 捕捉高斯噪声的高频散布特性
+        'std_dev_diff',         # 衡量注意力分散/集中的变化
+        'ratio_zscore'          # 能量比的基线分离度 (Z-score)
     ]
 
-    # 专家2：“频域分析专家” (Frequency Domain Expert)
-    # 关注的是 H_vuln 在频域上的内在特性
-    features_frequency = [
-        'high_freq_ratio',     # 旨在捕捉高斯噪声的高频散布特性 [cite: 23]
-        'ratio_zscore'         # 您新设计的特征三：能量比的基线分离度 (Z-score)
+    # 2. 定义"结构派"仲裁专家 (structural_arbitrator)
+    # 使命：担任第二道防线，成为一个高精度的"事实核查官"
+    # 理论依据：ll_distortion 等结构性特征在当前模型中被严重低估，需要专门模型强制利用
+    features_structural_arbitrator = [
+        'll_distortion',        # 核心：低频子带结构失真度
+        'contrast',             # 对比度
+        'correlation',          # 相关性
+        'homogeneity',          # 同质性
+        'energy',               # 能量
+        'cosine_similarity'     # 余弦相似度
     ]
-
-    # 专家3：“纹理学专家” (Texture Expert)
-    # 关注的是 H_vuln 热力图的“质感”
-    features_texture = [
-        'contrast',             # 对比度 [cite: 24]
-        'homogeneity',          # 同质性 [cite: 24]
-        'energy',               # 能量 [cite: 24]
-        'correlation'           # 相关性 [cite: 24]
-    ]
-
-    # 专家4：“敏感性/内在性专家” (Sensitivity/Intrinsic Expert)
-    # (这是一个建议的组合，您可以根据需要调整)
-    # 关注的是 H_vuln 本身的统计特性，作为对其他专家的补充
-    features_sensitivity = [
-        'std_dev_diff',         # 注意：这里可以复用一些特征，让不同专家有交叉视角
-        'kurtosis_diff',
-        'high_freq_ratio'
-    ]  
+    
+    print(f"能量派初筛专家特征集: {features_energy_screener}")
+    print(f"结构派仲裁专家特征集: {features_structural_arbitrator}")
+    
+    # 数据预处理
     X_train_experts_imputed = imputer1.transform(X_train_experts)
     X_train_experts_scaled = scaler1.transform(X_train_experts_imputed)
     X_train_experts_scaled_df = pd.DataFrame(X_train_experts_scaled, columns=X_train_experts.columns, index=X_train_experts.index)
-    dynamic_expert = RandomForestClassifier(n_estimators=100, random_state=42, n_jobs=-1)
-    frequency_expert = RandomForestClassifier(n_estimators=100, random_state=42, n_jobs=-1)
-    texture_expert = RandomForestClassifier(n_estimators=100, random_state=42, n_jobs=-1)
-    sensitivity_expert = RandomForestClassifier(n_estimators=100, random_state=42, n_jobs=-1)
-    dynamic_opinions = cross_val_predict(dynamic_expert, X_train_experts_scaled_df[features_dynamic], y_train_experts, cv=5, method='predict_proba')
-    frequency_opinions = cross_val_predict(frequency_expert, X_train_experts_scaled_df[features_frequency], y_train_experts, cv=5, method='predict_proba')
-    texture_opinions = cross_val_predict(texture_expert, X_train_experts_scaled_df[features_texture], y_train_experts, cv=5, method='predict_proba')
-    sensitivity_opinions = cross_val_predict(sensitivity_expert, X_train_experts_scaled_df[features_sensitivity], y_train_experts, cv=5, method='predict_proba')
-    X_train_meta = np.hstack([dynamic_opinions, frequency_opinions, texture_opinions, sensitivity_opinions])
-    print("专家会诊完成，已形成元特征集。")
-    dynamic_expert.fit(X_train_experts_scaled_df[features_dynamic], y_train_experts)
-    frequency_expert.fit(X_train_experts_scaled_df[features_frequency], y_train_experts)
-    texture_expert.fit(X_train_experts_scaled_df[features_texture], y_train_experts)
-    sensitivity_expert.fit(X_train_experts_scaled_df[features_sensitivity], y_train_experts)
-    print("专家学习完成。")
-    meta_classifier = LogisticRegression(random_state=42)
-    meta_classifier.fit(X_train_meta, y_train_experts)
-    print("最终决策者训练完成！")
+    
+    # 训练两个专门的专家模型
+    energy_screener = RandomForestClassifier(n_estimators=100, random_state=42, n_jobs=-1)
+    structural_arbitrator = RandomForestClassifier(n_estimators=100, random_state=42, n_jobs=-1)
+    
+    # 训练能量派初筛专家
+    print("\n正在训练能量派初筛专家...")
+    energy_screener.fit(X_train_experts_scaled_df[features_energy_screener], y_train_experts)
+    
+    # 训练结构派仲裁专家
+    print("正在训练结构派仲裁专家...")
+    structural_arbitrator.fit(X_train_experts_scaled_df[features_structural_arbitrator], y_train_experts)
+    
+    print("两个专家模型训练完成！")
+    # 阶段 2b：验证仲裁专家性能
+    # =============================================================================
+    print("\n--- 阶段 2b：验证仲裁专家性能 ---")
+    
+    # 验证能量派初筛专家性能
+    energy_screener_train_pred = energy_screener.predict(X_train_experts_scaled_df[features_energy_screener])
+    energy_screener_accuracy = accuracy_score(y_train_experts, energy_screener_train_pred)
+    print(f"能量派初筛专家训练集准确率: {energy_screener_accuracy:.4f}")
+    
+    # 验证结构派仲裁专家性能
+    structural_arbitrator_train_pred = structural_arbitrator.predict(X_train_experts_scaled_df[features_structural_arbitrator])
+    structural_arbitrator_accuracy = accuracy_score(y_train_experts, structural_arbitrator_train_pred)
+    print(f"结构派仲裁专家训练集准确率: {structural_arbitrator_accuracy:.4f}")
+    
+    print("仲裁专家性能验证完成！")
 
     # =============================================================================
     # 新增：特征重要性审讯与分析
@@ -176,12 +180,10 @@ def main():
     # 第一阶段：证据收集 - 审讯准备与执行
     print("\n--- 第一阶段：证据收集 ---")
     
-    # 1.1 定位审讯目标：四个专家模型
+    # 1.1 定位审讯目标：两个仲裁专家模型
     experts = {
-        'dynamic_expert': (dynamic_expert, features_dynamic, '动态变化学专家'),
-        'frequency_expert': (frequency_expert, features_frequency, '频域分析专家'),
-        'texture_expert': (texture_expert, features_texture, '纹理学专家'),
-        'sensitivity_expert': (sensitivity_expert, features_sensitivity, '敏感性/内在性专家')
+        'energy_screener': (energy_screener, features_energy_screener, '能量派初筛专家'),
+        'structural_arbitrator': (structural_arbitrator, features_structural_arbitrator, '结构派仲裁专家')
     }
     
     # 1.2 审讯实施：提取每个专家的"口供"
@@ -406,20 +408,70 @@ def main():
     X_test_for_experts = X_test_scaled_df[non_drift_test_mask]
     print(f" -> '分诊台'诊断完毕: {len(X_test_for_experts)} 个样本被提交至'专家组'。")
     if len(X_test_for_experts) > 0:
-        print(" -> 步骤2: '专家组'开始对疑难样本进行会诊...")
-        dynamic_opinions_test = dynamic_expert.predict_proba(X_test_for_experts[features_dynamic])
-        frequency_opinions_test = frequency_expert.predict_proba(X_test_for_experts[features_frequency])
-        texture_opinions_test = texture_expert.predict_proba(X_test_for_experts[features_texture])
-        sensitivity_opinions_test = sensitivity_expert.predict_proba(X_test_for_experts[features_sensitivity])
-        X_test_meta = np.hstack([dynamic_opinions_test, frequency_opinions_test, texture_opinions_test, sensitivity_opinions_test])
-        expert_predictions = meta_classifier.predict(X_test_meta)
-        expert_predictions_original_labels = label_encoder2.inverse_transform(expert_predictions)
+        print(" -> 步骤2: '发现-核查'仲裁流程开始...")
+        
+        # 阶段 2b：构建全新的仲裁式预测逻辑
+        # =============================================================================
+        print(" -> 2a. 初步筛查：能量派初筛专家进行异常信号检测...")
+        
+        # 1. 初步筛查：能量派初筛专家
+        energy_screener_predictions = energy_screener.predict(X_test_for_experts[features_energy_screener])
+        energy_screener_proba = energy_screener.predict_proba(X_test_for_experts[features_energy_screener])
+        
+        # 2. 条件仲裁（核心逻辑）
+        print(" -> 2b. 条件仲裁：根据初筛结果决定是否触发仲裁...")
+        
+        # 获取标签映射
+        print(f"可用的标签类别: {list(label_encoder2.classes_)}")
+        print(f"标签编码器映射: {dict(zip(range(len(label_encoder2.classes_)), label_encoder2.classes_))}")
+        
+        # 根据编码后的标签来确定索引
+        # 假设 0 是 gaussian_noise, 2 是 adversarial_attack
+        gaussian_noise_label = 0  # 假设这是高斯噪声的编码
+        adversarial_attack_label = 2  # 假设这是对抗攻击的编码
+        
+        # 初始化最终预测结果
+        final_expert_predictions = np.zeros(len(X_test_for_experts), dtype=int)
+        
+        # 统计仲裁情况
+        arbitration_count = 0
+        direct_accept_count = 0
+        
+        for i, (energy_pred, energy_proba) in enumerate(zip(energy_screener_predictions, energy_screener_proba)):
+            if energy_pred == gaussian_noise_label:
+                # 情况一：初筛专家诊断为"高斯噪声"，流程立即终止
+                final_expert_predictions[i] = gaussian_noise_label
+                direct_accept_count += 1
+            else:
+                # 情况二：初筛专家诊断为"对抗攻击"，必须触发仲裁
+                arbitration_count += 1
+                print(f"     -> 样本 {i+1}: 初筛专家认为可疑，启动仲裁...")
+                
+                # 将该"可疑"样本提交给结构派仲裁专家
+                sample_features = X_test_for_experts.iloc[i:i+1][features_structural_arbitrator]
+                arbitrator_prediction = structural_arbitrator.predict(sample_features)[0]
+                arbitrator_proba = structural_arbitrator.predict_proba(sample_features)[0]
+                
+                # 采纳仲裁专家的最终意见
+                if arbitrator_prediction == adversarial_attack_label:
+                    # 仲裁专家同意是"对抗攻击"
+                    final_expert_predictions[i] = adversarial_attack_label
+                    print(f"     -> 样本 {i+1}: 仲裁专家确认攻击，最终判定为对抗攻击")
+                else:
+                    # 仲裁专家行使"一票否决权"，推翻初筛结果
+                    final_expert_predictions[i] = gaussian_noise_label
+                    print(f"     -> 样本 {i+1}: 仲裁专家行使否决权，修正为高斯噪声")
+        
+        print(f" -> 仲裁统计：直接接受 {direct_accept_count} 个样本，仲裁 {arbitration_count} 个样本")
+        
+        # 转换回原始标签
+        expert_predictions_original_labels = label_encoder2.inverse_transform(final_expert_predictions)
         final_predictions[non_drift_test_mask] = expert_predictions_original_labels
-        print(" -> '专家组'会诊完毕。")
+        print(" -> '发现-核查'仲裁流程完毕。")
     drift_label_encoded = list(label_encoder.classes_).index('drift_parameter')
     final_predictions[pred1_test == 1] = drift_label_encoded
     print("...所有样本预测流程结束。")
-    print("\n--- 两阶段专家组决策系统最终性能评估 ---")
+    print("\n--- 两阶段'一票否决'仲裁专家系统最终性能评估 ---")
     print(f"最终准确率: {accuracy_score(y_test_full, final_predictions):.4f}")
     print("\n最终分类报告:")
     print(classification_report(y_test_full, final_predictions, target_names=label_encoder.classes_))
@@ -427,7 +479,7 @@ def main():
     final_cm = confusion_matrix(y_test_full, final_predictions)
     plt.figure(figsize=(10, 8))
     sns.heatmap(final_cm, annot=True, fmt='d', cmap='Blues', xticklabels=label_encoder.classes_, yticklabels=label_encoder.classes_)
-    plt.title('Final Confusion Matrix for the Two-Stage Expert System')
+    plt.title('Final Confusion Matrix for the Two-Stage Arbitration Expert System')
     plt.ylabel('True Label')
     plt.xlabel('Predicted Label')
     # 保存图像到最新的运行文件夹
