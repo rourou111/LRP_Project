@@ -52,6 +52,13 @@ def main():
     except FileNotFoundError:
         print(f"\n错误：在路径 '{fingerprint_file_path}' 中找不到 vulnerability_fingerprints.csv 文件。")
         sys.exit(1)
+    
+    # --- 创建新的结果保存文件夹 ---
+    from datetime import datetime
+    current_time = datetime.now().strftime("%Y-%m-%d_%H-%M-%S")
+    new_results_dir = os.path.join(runs_dir, f"classifier_results_{current_time}")
+    os.makedirs(new_results_dir, exist_ok=True)
+    print(f"\n创建新的结果保存文件夹: {new_results_dir}")
 
     # --- 2. 分离特征 (X) 与原始标签 (y) ---
     # ... (此部分代码与原脚本完全一致，无需改动) ...
@@ -282,11 +289,11 @@ def main():
     
     # 保存特征重要性分析结果
     print("\n--- 保存分析结果 ---")
-    if os.path.exists(latest_run_dir):
-        # 保存详细的特征重要性数据
-        importance_df.to_csv(os.path.join(latest_run_dir, 'feature_importance_analysis.csv'), index=False)
-        global_importance.to_csv(os.path.join(latest_run_dir, 'global_feature_ranking.csv'), index=False)
+    # 保存详细的特征重要性数据
+    importance_df.to_csv(os.path.join(new_results_dir, 'feature_importance_analysis.csv'), index=False)
+    global_importance.to_csv(os.path.join(new_results_dir, 'global_feature_ranking.csv'), index=False)
         
+    if os.path.exists(new_results_dir):
         # 生成特征重要性可视化
         plt.figure(figsize=(16, 12))
         
@@ -356,9 +363,9 @@ def main():
         plt.tight_layout(pad=3.0)
         
         # 保存图像时确保完整显示
-        plt.savefig(os.path.join(latest_run_dir, 'feature_importance_analysis.png'), 
+        plt.savefig(os.path.join(new_results_dir, 'feature_importance_analysis.png'), 
                    dpi=300, bbox_inches='tight', facecolor='white')
-        print(f"特征重要性分析图表已保存到: {latest_run_dir}")
+        print(f"特征重要性分析图表已保存到: {new_results_dir}")
         
         # 显示图像
         plt.show()
@@ -382,9 +389,9 @@ def main():
         plt.yticks(rotation=0)
         
         plt.tight_layout()
-        plt.savefig(os.path.join(latest_run_dir, 'feature_importance_heatmap.png'), 
+        plt.savefig(os.path.join(new_results_dir, 'feature_importance_heatmap.png'), 
                    dpi=300, bbox_inches='tight', facecolor='white')
-        print(f"特征重要性热力图已保存到: {latest_run_dir}")
+        print(f"特征重要性热力图已保存到: {new_results_dir}")
         plt.show()
     
     print("\n特征重要性审讯与分析完成！")
@@ -482,10 +489,9 @@ def main():
     plt.title('Final Confusion Matrix for the Two-Stage Arbitration Expert System')
     plt.ylabel('True Label')
     plt.xlabel('Predicted Label')
-    # 保存图像到最新的运行文件夹
-    if os.path.exists(latest_run_dir):
-        plt.savefig(os.path.join(latest_run_dir, 'final_confusion_matrix_expert_system.png'))
-        print(f"\n混淆矩阵图像已保存到: {latest_run_dir}")
+    # 保存图像到新的结果文件夹
+    plt.savefig(os.path.join(new_results_dir, 'final_confusion_matrix_expert_system.png'))
+    print(f"\n混淆矩阵图像已保存到: {new_results_dir}")
     plt.show()
     print("\n脚本执行完毕！")
 
@@ -525,7 +531,7 @@ def main():
                 fontsize=10, style='italic', color='gray')
     
     plt.tight_layout()
-    plt.savefig(os.path.join(latest_run_dir, '01_feature_importance_ranking.png'), 
+    plt.savefig(os.path.join(new_results_dir, '01_feature_importance_ranking.png'), 
                dpi=300, bbox_inches='tight', facecolor='white')
     plt.show()
     
@@ -563,7 +569,7 @@ def main():
                 fontsize=10, style='italic', color='gray')
     
     plt.tight_layout()
-    plt.savefig(os.path.join(latest_run_dir, '02_expert_comparison.png'), 
+    plt.savefig(os.path.join(new_results_dir, '02_expert_comparison.png'), 
                dpi=300, bbox_inches='tight', facecolor='white')
     plt.show()
     
@@ -608,7 +614,7 @@ def main():
     ax2.legend(fontsize=10)
     
     plt.tight_layout()
-    plt.savefig(os.path.join(latest_run_dir, '03_feature_analysis.png'), 
+    plt.savefig(os.path.join(new_results_dir, '03_feature_analysis.png'), 
                dpi=300, bbox_inches='tight', facecolor='white')
     plt.show()
     
@@ -632,11 +638,11 @@ def main():
     plt.yticks(rotation=0)
     
     plt.tight_layout()
-    plt.savefig(os.path.join(latest_run_dir, '04_feature_heatmap.png'), 
+    plt.savefig(os.path.join(new_results_dir, '04_feature_heatmap.png'), 
                dpi=300, bbox_inches='tight', facecolor='white')
     plt.show()
     
-    print(f"\n所有优化后的图表已保存到: {latest_run_dir}")
+    print(f"\n所有优化后的图表已保存到: {new_results_dir}")
     print("现在每个图表都有清晰的标题、标签和说明，应该更容易理解了！")
 
 if __name__ == '__main__':
