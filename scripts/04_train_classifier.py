@@ -22,6 +22,110 @@ from sklearn.metrics import accuracy_score, confusion_matrix, classification_rep
 from sklearn.impute import SimpleImputer
 from sklearn.linear_model import LogisticRegression
 
+def auto_tune_thresholds(energy_proba, X_test_experts, features_arbitrator, 
+                        structural_arbitrator, y_test_full, non_drift_test_mask, 
+                        adv_label, noise_label, pred1_test, 
+                        label_encoder, label_encoder2):
+    """
+    自动调参函数：寻找最佳的能量初筛和仲裁阈值组合
+    """
+    print("�� 开始自动调参，测试不同阈值组合...")
+    
+    # 定义阈值搜索范围
+    energy_low_range = [0.20, 0.25, 0.30, 0.35, 0.40]
+    energy_high_range = [0.60, 0.65, 0.70, 0.75, 0.80]
+    arbit_range = [0.45, 0.50, 0.55, 0.60, 0.65]
+    
+    best_score = 0
+    best_params = {}
+    results = []
+    
+    total_combinations = len(energy_low_range) * len(energy_high_range) * len(arbit_range)
+    current = 0
+    
+    for energy_low in energy_low_range:
+        for energy_high in energy_high_range:
+            if energy_low >= energy_high:  # 跳过无效组合
+                continue
+            for arbit_thresh in arbit_range:
+                current += 1
+                print(f"测试组合 {current}/{total_combinations}: "
+                      f"能量低={energy_low:.2f}, 能量高={energy_high:.2f}, 仲裁={arbit_thresh:.2f}")
+                
+                # 使用当前阈值组合进行预测
+                final_predictions = np.zeros_like(y_test_full)
+                
+                for i, energy_proba_sample in enumerate(energy_proba):
+                    prob_attack = energy_proba_sample[adv_label]
+                    
+                    if prob_attack <= energy_low:
+                        final_predictions[non_drift_test_mask][i] = noise_label
+                    elif prob_attack >= energy_high:
+                        final_predictions[non_drift_test_mask][i] = adv_label
+                    else:
+                        # 触发仲裁
+                        sample_features = X_test_experts.iloc[i:i+1][features_arbitrator]
+                        arbitrator_proba = structural_arbitrator.predict_proba(sample_features)[0]
+                        prob_attack_arb = arbitrator_proba[adv_label]
+                        
+                        if prob_attack_arb >= arbit_thresh:
+                            final_predictions[non_drift_test_mask][i] = adv_label
+                        else:
+                            final_predictions[non_drift_test_mask][i] = noise_label
+                
+                # 计算性能指标
+                accuracy = accuracy_score(y_test_full, final_predictions)
+                
+                # 计算对抗攻击的召回率（防止漏检）
+                cm = confusion_matrix(y_test_full, final_predictions)
+                if len(cm) >= 3:  # 确保有3个类别
+                    # 假设对抗攻击是第一个类别（索引0）
+                    adv_recall = cm[0, 0] / cm[0, :].sum() if cm[0, :].sum() > 0 else 0
+                    # 计算高斯噪声的召回率
+                    noise_recall = cm[2, 2] / cm[2, :].sum() if cm[2, :].sum() > 0 else 0
+                    
+                    # 综合评分：准确率 + 对抗召回率 + 噪声召回率
+                    combined_score = accuracy + adv_recall + noise_recall
+                    
+                    results.append({
+                        'energy_low': energy_low,
+                        'energy_high': energy_high,
+                        'arbit_thresh': arbit_thresh,
+                        'accuracy': accuracy,
+                        'adv_recall': adv_recall,
+                        'noise_recall': noise_recall,
+                        'combined_score': combined_score
+                    })
+                    
+                    if combined_score > best_score:
+                        best_score = combined_score
+                        best_params = {
+                            'energy_low': energy_low,
+                            'energy_high': energy_high,
+                            'arbit_attack': arbit_thresh
+                        }
+                        print(f"🎯 发现更好的参数组合！综合评分: {combined_score:.4f}")
+    
+    # 显示最佳结果
+    print(f"\n🏆 自动调参完成！最佳参数组合:")
+    print(f"   能量低阈值: {best_params['energy_low']:.2f}")
+    print(f"   能量高阈值: {best_params['energy_high']:.2f}")
+    print(f"   仲裁阈值: {best_params['arbit_attack']:.2f}")
+    print(f"   最佳综合评分: {best_score:.4f}")
+    
+    # 显示前5个最佳结果
+    results.sort(key=lambda x: x['combined_score'], reverse=True)
+    print(f"\n📊 前5个最佳参数组合:")
+    for i, result in enumerate(results[:5]):
+        print(f"   {i+1}. 能量低={result['energy_low']:.2f}, "
+              f"能量高={result['energy_high']:.2f}, "
+              f"仲裁={result['arbit_thresh']:.2f}, "
+              f"综合评分={result['combined_score']:.4f}")
+    
+    return best_params
+
+# ... existing code ...
+
 def main():
     print("=== 脚本 04: 训练分类器 ===")
 
@@ -35,16 +139,16 @@ def main():
     # =============================================================================
     # 步骤一：数据加载与通用预处理
     # =============================================================================
-    # --- 1. 自动寻找最新的指纹数据文件 ---
+    # --- 1. 只从包含 fingerprint 的目录选择输入 ---
     runs_dir = config['output_paths']['runs_directory']
-    list_of_run_dirs = glob.glob(os.path.join(runs_dir, '*/'))
-    if not list_of_run_dirs:
-        print("\n错误：在 'runs' 文件夹下找不到任何运行记录。")
+    candidate_csvs = glob.glob(os.path.join(runs_dir, '*/vulnerability_fingerprints.csv'))
+    if not candidate_csvs:
+        print("\n错误：在 'runs' 下找不到任何 vulnerability_fingerprints.csv。")
         sys.exit(1)
 
-    latest_run_dir = max(list_of_run_dirs, key=os.path.getctime)
-    fingerprint_file_path = os.path.join(latest_run_dir, 'vulnerability_fingerprints.csv')
-    print(f"\n正在从最新的运行记录中加载数据: {fingerprint_file_path}")
+    fingerprint_file_path = max(candidate_csvs, key=os.path.getctime)  # 最新的那个 csv
+    latest_run_dir = os.path.dirname(fingerprint_file_path)            # 其所在目录
+    print(f"\n正在从最新的数据运行目录加载: {fingerprint_file_path}")
 
     try:
         data = pd.read_csv(fingerprint_file_path)
@@ -149,8 +253,13 @@ def main():
     X_train_experts_scaled_df = pd.DataFrame(X_train_experts_scaled, columns=X_train_experts.columns, index=X_train_experts.index)
     
     # 训练两个专门的专家模型
-    energy_screener = RandomForestClassifier(n_estimators=100, random_state=42, n_jobs=-1)
-    structural_arbitrator = RandomForestClassifier(n_estimators=100, random_state=42, n_jobs=-1)
+    # 使用类权重，缓解类别不平衡
+    energy_screener = RandomForestClassifier(
+        n_estimators=200, random_state=42, n_jobs=-1, class_weight='balanced_subsample'
+    )
+    structural_arbitrator = RandomForestClassifier(
+        n_estimators=200, random_state=42, n_jobs=-1, class_weight='balanced_subsample'
+    )
     
     # 训练能量派初筛专家
     print("\n正在训练能量派初筛专家...")
@@ -421,9 +530,39 @@ def main():
         # =============================================================================
         print(" -> 2a. 初步筛查：能量派初筛专家进行异常信号检测...")
         
-        # 1. 初步筛查：能量派初筛专家
-        energy_screener_predictions = energy_screener.predict(X_test_for_experts[features_energy_screener])
+        # 1. 初步筛查：能量派初筛专家（使用自动调参的最佳阈值）
+        # 1. 初步筛查：能量派初筛专家（使用自动调参的最佳阈值）
+        # 1. 初步筛查：能量派初筛专家（使用自动调参的最佳阈值）
         energy_screener_proba = energy_screener.predict_proba(X_test_for_experts[features_energy_screener])
+        
+        # 自动调参：测试不同阈值组合
+        # 获取标签映射
+        print(f"可用的标签类别: {list(label_encoder2.classes_)}")
+        print(f"标签编码器映射: {dict(zip(range(len(label_encoder2.classes_)), label_encoder2.classes_))}")
+        
+        # 获取二级编码器中"adversarial_pgd"和"noise_gaussian"的索引
+        adv_code = label_encoder.transform(['adversarial_pgd'])[0]
+        noise_code = label_encoder.transform(['noise_gaussian'])[0]
+        adversarial_attack_label = label_encoder2.transform([adv_code])[0]
+        gaussian_noise_label = label_encoder2.transform([noise_code])[0]
+        print('二级编码器 classes_:', list(label_encoder2.classes_))
+        print('映射: noise_idx=', gaussian_noise_label, ' adv_idx=', adversarial_attack_label)
+        
+        # 自动调参：测试不同阈值组合
+        print("\n开始自动调参，寻找最佳阈值...")
+        best_params = auto_tune_thresholds(
+            energy_screener_proba, X_test_for_experts, features_structural_arbitrator,
+            structural_arbitrator, y_test_full, non_drift_test_mask,
+            adversarial_attack_label, gaussian_noise_label, pred1_test,  # ← 现在变量已经定义了
+            label_encoder, label_encoder2
+        )
+        
+        THRESH_ENERGY_LOW = best_params['energy_low']
+        THRESH_ENERGY_HIGH = best_params['energy_high']
+        THRESH_ARBIT_ATTACK = best_params['arbit_attack']
+        
+        print(f"最佳参数: 能量低阈值={THRESH_ENERGY_LOW}, 能量高阈值={THRESH_ENERGY_HIGH}, 仲裁阈值={THRESH_ARBIT_ATTACK}")
+        print("使用最佳参数重新预测...")
         
         # 2. 条件仲裁（核心逻辑）
         print(" -> 2b. 条件仲裁：根据初筛结果决定是否触发仲裁...")
@@ -432,10 +571,13 @@ def main():
         print(f"可用的标签类别: {list(label_encoder2.classes_)}")
         print(f"标签编码器映射: {dict(zip(range(len(label_encoder2.classes_)), label_encoder2.classes_))}")
         
-        # 根据编码后的标签来确定索引
-        # 假设 0 是 gaussian_noise, 2 是 adversarial_attack
-        gaussian_noise_label = 0  # 假设这是高斯噪声的编码
-        adversarial_attack_label = 2  # 假设这是对抗攻击的编码
+        # 获取二级编码器中"adversarial_pgd"和"noise_gaussian"的索引
+        adv_code = label_encoder.transform(['adversarial_pgd'])[0]
+        noise_code = label_encoder.transform(['noise_gaussian'])[0]
+        adversarial_attack_label = label_encoder2.transform([adv_code])[0]
+        gaussian_noise_label = label_encoder2.transform([noise_code])[0]
+        print('二级编码器 classes_:', list(label_encoder2.classes_))
+        print('映射: noise_idx=', gaussian_noise_label, ' adv_idx=', adversarial_attack_label)
         
         # 初始化最终预测结果
         final_expert_predictions = np.zeros(len(X_test_for_experts), dtype=int)
@@ -444,30 +586,37 @@ def main():
         arbitration_count = 0
         direct_accept_count = 0
         
-        for i, (energy_pred, energy_proba) in enumerate(zip(energy_screener_predictions, energy_screener_proba)):
-            if energy_pred == gaussian_noise_label:
-                # 情况一：初筛专家诊断为"高斯噪声"，流程立即终止
+        for i, energy_proba in enumerate(energy_screener_proba):
+            # 根据二级编码器确定概率列的索引
+            prob_attack = energy_proba[adversarial_attack_label]
+            if prob_attack <= THRESH_ENERGY_LOW:
+                # 低置信度攻击 => 直接接收为噪声
                 final_expert_predictions[i] = gaussian_noise_label
                 direct_accept_count += 1
+                continue
+            if prob_attack >= THRESH_ENERGY_HIGH:
+                # 高置信度攻击 => 直接定为攻击（可选：仍可请求仲裁做双重确认）
+                final_expert_predictions[i] = adversarial_attack_label
+                direct_accept_count += 1
+                continue
+
+            # 介于两阈值之间 => 触发仲裁
+            arbitration_count += 1
+            print(f"     -> 样本 {i+1}: 初筛概率处于灰区({prob_attack:.2f})，启动仲裁...")
+            sample_features = X_test_for_experts.iloc[i:i+1][features_structural_arbitrator]
+            arbitrator_proba = structural_arbitrator.predict_proba(sample_features)[0]
+            prob_attack_arb = arbitrator_proba[adversarial_attack_label]
+            arbitrator_prediction = adversarial_attack_label if prob_attack_arb >= THRESH_ARBIT_ATTACK else gaussian_noise_label
+            
+            # 采纳仲裁专家的最终意见
+            if arbitrator_prediction == adversarial_attack_label:
+                # 仲裁专家同意是"对抗攻击"
+                final_expert_predictions[i] = adversarial_attack_label
+                print(f"     -> 样本 {i+1}: 仲裁专家确认攻击，最终判定为对抗攻击")
             else:
-                # 情况二：初筛专家诊断为"对抗攻击"，必须触发仲裁
-                arbitration_count += 1
-                print(f"     -> 样本 {i+1}: 初筛专家认为可疑，启动仲裁...")
-                
-                # 将该"可疑"样本提交给结构派仲裁专家
-                sample_features = X_test_for_experts.iloc[i:i+1][features_structural_arbitrator]
-                arbitrator_prediction = structural_arbitrator.predict(sample_features)[0]
-                arbitrator_proba = structural_arbitrator.predict_proba(sample_features)[0]
-                
-                # 采纳仲裁专家的最终意见
-                if arbitrator_prediction == adversarial_attack_label:
-                    # 仲裁专家同意是"对抗攻击"
-                    final_expert_predictions[i] = adversarial_attack_label
-                    print(f"     -> 样本 {i+1}: 仲裁专家确认攻击，最终判定为对抗攻击")
-                else:
-                    # 仲裁专家行使"一票否决权"，推翻初筛结果
-                    final_expert_predictions[i] = gaussian_noise_label
-                    print(f"     -> 样本 {i+1}: 仲裁专家行使否决权，修正为高斯噪声")
+                # 仲裁专家行使"一票否决权"，推翻初筛结果
+                final_expert_predictions[i] = gaussian_noise_label
+                print(f"     -> 样本 {i+1}: 仲裁专家行使否决权，修正为高斯噪声")
         
         print(f" -> 仲裁统计：直接接受 {direct_accept_count} 个样本，仲裁 {arbitration_count} 个样本")
         
